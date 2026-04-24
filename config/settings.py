@@ -15,4 +15,4 @@ CLOUDINARY_CONFIG = {
 # OLLAMA_URL = "http://localhost:11434/api/generate"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-3-flash-preview"
+GEMINI_MODEL = "gemini-2.5-flash"

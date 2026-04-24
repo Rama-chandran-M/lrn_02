@@ -9,12 +9,12 @@ Return ONLY valid JSON.
 
 FORMAT:
 [
-  {
+  {{
     "question_number": integer or null,
     "question_title": string or null,
     "answer": string,
     "status": "attempted"
-  }
+  }}
 ]
 
 Rules:

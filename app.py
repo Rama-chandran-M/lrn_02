@@ -2,9 +2,7 @@ import streamlit as st
 import json
 import re
 
-from agents.ocr_agent import extract_text
-from agents.structuring_agent import structure_text
-from agents.evaluation_agent import evaluate_answers
+from agents.pipeline_agent import run_full_pipeline
 
 # =========================
 # 🎨 CONFIG
@@ -43,7 +41,7 @@ st.markdown("""
 # =========================
 # 🧠 STATE INIT
 # =========================
-for key in ["student_json", "answer_key_json", "evaluation", "student_file", "answer_key_file"]:
+for key in ["evaluation", "student_file", "answer_key_file"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -65,24 +63,20 @@ st.title("🧠 AI Answer Evaluator")
 # =========================
 # 🧭 STEP TRACKER
 # =========================
-step1 = "active" if not st.session_state.student_json else ""
-step2 = "active" if st.session_state.student_json and not st.session_state.answer_key_json else ""
-step3 = "active" if st.session_state.answer_key_json and not st.session_state.evaluation else ""
-step4 = "active" if st.session_state.evaluation else ""
+step1 = "active" if not st.session_state.evaluation else ""
+step2 = "active" if st.session_state.evaluation else ""
 
 st.markdown(f"""
 <div>
-<span class="step {step1}">Upload</span>
-<span class="step {step2}">Process</span>
-<span class="step {step3}">Evaluate</span>
-<span class="step {step4}">Done</span>
+<span class="step {step1}">Upload & Run</span>
+<span class="step {step2}">Results</span>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("---")
 
 # =========================
-# 📂 UPLOAD (FIXED)
+# 📂 UPLOAD
 # =========================
 col1, col2 = st.columns(2)
 
@@ -107,73 +101,45 @@ with col2:
         st.session_state.answer_key_file = answer_key_file
 
 # =========================
-# ⚙️ PROCESS
+# 🚀 RUN FULL PIPELINE
 # =========================
-st.markdown("### ⚙️ Processing")
+st.markdown("### 🚀 Run AI Evaluation")
 
-p1, p2 = st.columns(2)
-
-with p1:
-    if st.button("Process Student", key="process_student"):
-        if st.session_state.student_file:
-            with st.spinner("Processing student..."):
-                text, err = extract_text(st.session_state.student_file)
-
-                if err:
-                    st.error(err)
-                else:
-                    json_out, err = structure_text(text, mode="student")
-
-                    if err:
-                        st.error(err)
-                    else:
-                        parsed, _ = clean_and_parse(json_out)
-                        st.session_state.student_json = parsed
-                        st.success("✔ Student processed")
-        else:
-            st.warning("Upload student file first")
-
-with p2:
-    if st.button("Process Answer Key", key="process_key"):
-        if st.session_state.answer_key_file:
-            with st.spinner("Processing key..."):
-                text, err = extract_text(st.session_state.answer_key_file)
-
-                if err:
-                    st.error(err)
-                else:
-                    json_out, err = structure_text(text, mode="answer_key")
-
-                    if err:
-                        st.error(err)
-                    else:
-                        parsed, _ = clean_and_parse(json_out)
-                        st.session_state.answer_key_json = parsed
-                        st.success("✔ Answer key processed")
-        else:
-            st.warning("Upload answer key first")
-
-# =========================
-# 🚀 EVALUATE
-# =========================
-st.markdown("### 🚀 Evaluation")
-
-ready = st.session_state.student_json and st.session_state.answer_key_json
+ready = st.session_state.student_file and st.session_state.answer_key_file
 
 st.markdown('<div class="big-btn">', unsafe_allow_html=True)
-if st.button("Run Evaluation", disabled=not ready):
-    with st.spinner("Evaluating..."):
-        result, err = evaluate_answers(
-            st.session_state.student_json,
-            st.session_state.answer_key_json
+if st.button("Run Full Evaluation", disabled=not ready):
+
+    step_placeholder = st.empty()     # 👈 dynamic step text
+    progress_bar = st.progress(0)     # 👈 progress bar
+
+    def update_step(text, progress):
+        step_placeholder.markdown(f"**{text}**")
+        progress_bar.progress(progress)
+
+    with st.spinner("Running full AI pipeline..."):
+
+        update_step("🚀 Starting...", 5)
+
+        result, err = run_full_pipeline(
+            st.session_state.student_file,
+            st.session_state.answer_key_file,
+            update_step=update_step   # 👈 pass callback
         )
 
         if err:
             st.error(err)
         else:
-            parsed, _ = clean_and_parse(result)
-            st.session_state.evaluation = parsed
-            st.success("🎉 Evaluation complete!")
+            parsed, parse_err = clean_and_parse(result)
+
+            if parse_err:
+                st.error("Parsing failed")
+                st.code(result)
+            else:
+                update_step("✅ Finalizing results...", 100)
+                st.session_state.evaluation = parsed
+                st.success("🎉 Evaluation Complete!")
+
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
@@ -198,24 +164,11 @@ if st.session_state.evaluation:
     st.write(summary.get("weaknesses", "N/A"))
 
 # =========================
-# 🔍 DATA DRAWER (DROPDOWNS)
+# 🔍 DATA EXPLORER
 # =========================
-if any([
-    st.session_state.student_json,
-    st.session_state.answer_key_json,
-    st.session_state.evaluation
-]):
+if st.session_state.evaluation:
     st.markdown("---")
-    st.markdown("### 🔍 Data Explorer")
+    st.markdown("### 🔍 Detailed Evaluation")
 
-    if st.session_state.student_json:
-        with st.expander("📄 Student JSON"):
-            st.json(st.session_state.student_json)
-
-    if st.session_state.answer_key_json:
-        with st.expander("📘 Answer Key JSON"):
-            st.json(st.session_state.answer_key_json)
-
-    if st.session_state.evaluation:
-        with st.expander("📊 Evaluation JSON"):
-            st.json(st.session_state.evaluation)
+    with st.expander("📊 Evaluation JSON"):
+        st.json(st.session_state.evaluation)

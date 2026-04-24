@@ -1,15 +1,16 @@
 import json
-from services.gemini_service import call_gemini
+from services.langchain_service import run_chain
 from prompts.evaluation_prompt import EVALUATION_PROMPT
 
 def evaluate_answers(student_json, answer_key_json):
-    prompt = EVALUATION_PROMPT.replace(
-        "__STUDENT_JSON__", json.dumps(student_json, indent=2)
-    ).replace(
-        "__ANSWER_KEY_JSON__", json.dumps(answer_key_json, indent=2)
-    )
 
-    response, error = call_gemini(prompt)
+    response, error = run_chain(
+        prompt_template_str=EVALUATION_PROMPT,
+        input_dict={
+            "student_json": json.dumps(student_json, indent=2),
+            "answer_key_json": json.dumps(answer_key_json, indent=2)
+        }
+    )
 
     if error:
         return None, error

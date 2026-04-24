@@ -17,12 +17,12 @@ Return ONLY valid JSON.
 
 FORMAT:
 [
-  {
-    "question_number": integer or null,
-    "question_title": string or null,
-    "answer": string,
-    "marks": integer or null
-  }
+  {{
+      "question_number": integer or null,
+      "question_title": string or null,
+      "answer": string,
+      "marks": integer or null
+  }}
 ]
 
 --------------------------------------------------

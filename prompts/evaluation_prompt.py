@@ -26,15 +26,15 @@ FORMAT:
 
 {
   "evaluation": [
-    {
-      "question_number": integer or null,
-      "question_title": string or null,
-      "student_answer": string or null,
-      "correct_answer": string,
-      "marks": integer or null,
-      "score": number,
-      "status": "attempted" | "missing"
-    }
+    {{
+         "question_number": integer or null,
+         "question_title": string or null,
+         "student_answer": string or null,
+         "correct_answer": string,
+         "marks": integer or null,
+         "score": number,
+         "status": "attempted" | "missing"
+    }}
   ],
   "summary": {
     "total_score": number,
@@ -157,9 +157,7 @@ STRICT CONSTRAINTS:
 
 --------------------------------------------------
 
-STUDENT JSON:
-__STUDENT_JSON__
+STUDENT JSON:{student_json}
 
-ANSWER KEY JSON:
-__ANSWER_KEY_JSON__
+ANSWER KEY JSON:{answer_key_json}
 """
