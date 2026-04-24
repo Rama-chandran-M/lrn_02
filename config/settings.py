@@ -11,5 +11,8 @@ CLOUDINARY_CONFIG = {
     "api_secret": os.getenv("CLOUDINARY_API_SECRET"),
 }
 
-OLLAMA_MODEL = "qwen2.5:1.5b"
-OLLAMA_URL = "http://localhost:11434/api/generate"
+# OLLAMA_MODEL = "qwen2.5:1.5b"
+# OLLAMA_URL = "http://localhost:11434/api/generate"
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = "gemini-3-flash-preview"
