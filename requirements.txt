@@ -1,5 +1,0 @@
-cloudinary==1.44.2
-protobuf==7.34.1
-python-dotenv==1.2.2
-Requests==2.33.1
-streamlit==1.56.0
