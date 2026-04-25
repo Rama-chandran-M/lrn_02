@@ -48,12 +48,24 @@ for key in ["evaluation", "student_file", "answer_key_file"]:
 # =========================
 # 🧹 JSON CLEANER
 # =========================
+# =========================
+# 🧹 JSON CLEANER (FIXED)
+# =========================
 def clean_and_parse(response):
     try:
+        # ✅ If already parsed
+        if isinstance(response, (dict, list)):
+            return response, None
+
+        # ✅ Ensure string
+        if not isinstance(response, str):
+            return None, f"Unexpected type: {type(response)}"
+
         cleaned = re.sub(r"```json|```", "", response).strip()
+
         return json.loads(cleaned), None
-    except:
-        return None, "Parsing error"
+    except Exception as e:
+        return None, str(e)
 
 # =========================
 # 🧠 HEADER
@@ -131,6 +143,14 @@ if st.button("Run Full Evaluation", disabled=not ready):
             st.error(err)
         else:
             parsed, parse_err = clean_and_parse(result)
+
+            # ✅ fallback if still string JSON
+            if parse_err and isinstance(result, str):
+                try:
+                    parsed = json.loads(result)
+                    parse_err = None
+                except:
+                    pass
 
             if parse_err:
                 st.error("Parsing failed")

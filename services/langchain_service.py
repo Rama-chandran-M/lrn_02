@@ -1,5 +1,4 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
 from config.settings import GEMINI_API_KEY, GEMINI_MODEL
 
 # Initialize LLM
@@ -11,15 +10,15 @@ llm = ChatGoogleGenerativeAI(
 
 def run_chain(prompt_template_str, input_dict):
     try:
-        prompt = PromptTemplate.from_template(prompt_template_str)
+        # ✅ Manual safe replacement (NO template engine)
+        prompt = prompt_template_str
 
-        # NEW LCEL chain
-        chain = prompt | llm
+        for key, value in input_dict.items():
+            prompt = prompt.replace(f"{{{key}}}", str(value))
 
-        response = chain.invoke(input_dict)
+        response = llm.invoke(prompt)
 
-        # Extract text properly
-        return response.content, None
+        return getattr(response, "content", str(response)), None
 
     except Exception as e:
         return None, str(e)

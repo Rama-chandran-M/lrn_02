@@ -7,28 +7,53 @@ from prompts.answer_key_prompt import ANSWER_KEY_PROMPT
 from prompts.evaluation_prompt import EVALUATION_PROMPT
 
 
-# ✅ SAFE JSON PARSER
+# =========================
+# ✅ SAFE JSON PARSER (FIXED)
+# =========================
 def safe_json_parse(text):
-    if not text or text.strip() == "":
+    # ✅ Case 1: Already parsed JSON (LLM returned dict/list)
+    if isinstance(text, (dict, list)):
+        return text, None
+
+    # ❌ Unexpected type
+    if not isinstance(text, str):
+        return None, f"Unexpected type: {type(text)}"
+
+    # ❌ Empty string
+    if text.strip() == "":
         return None, "Empty response from model"
 
     try:
-        # Remove markdown if present
+        # Remove markdown formatting
         cleaned = re.sub(r"```json|```", "", text).strip()
 
-        # Extract JSON block
-        match = re.search(r"\[.*\]|\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            return None, f"No JSON found.\nRaw output:\n{text}"
+        # =========================
+        # ✅ FIXED JSON EXTRACTION
+        # =========================
 
-        json_text = match.group()
+        # Try full parse first
+        try:
+            return json.loads(cleaned), None
+        except:
+            pass
 
-        return json.loads(json_text), None
+        # Extract full JSON safely
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+
+        if start != -1 and end != -1:
+            json_text = cleaned[start:end+1]
+            return json.loads(json_text), None
+
+        return None, f"No JSON found.\nRaw output:\n{text}"
 
     except Exception as e:
         return None, f"JSON parse failed: {str(e)}\nRaw:\n{text}"
 
 
+# =========================
+# 🚀 FULL PIPELINE
+# =========================
 def run_full_pipeline(student_file, answer_key_file, update_step=None):
     try:
         # =========================
@@ -58,7 +83,6 @@ def run_full_pipeline(student_file, answer_key_file, update_step=None):
         if err:
             return None, err
 
-        # ✅ FIXED HERE
         student_json, parse_err = safe_json_parse(student_struct)
         if parse_err:
             return None, f"Student JSON error:\n{parse_err}"
@@ -76,7 +100,6 @@ def run_full_pipeline(student_file, answer_key_file, update_step=None):
         if err:
             return None, err
 
-        # ✅ FIXED HERE
         key_json, parse_err = safe_json_parse(key_struct)
         if parse_err:
             return None, f"Answer Key JSON error:\n{parse_err}"
@@ -103,7 +126,12 @@ def run_full_pipeline(student_file, answer_key_file, update_step=None):
         if update_step:
             update_step("✅ Finalizing results...", 100)
 
-        return evaluation_result, None
+        final_json, parse_err = safe_json_parse(evaluation_result)
+
+        if parse_err:
+            return None, f"Final JSON error:\n{parse_err}"
+
+        return final_json, None
 
     except Exception as e:
         return None, str(e)
