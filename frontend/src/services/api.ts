@@ -19,37 +19,55 @@ export const evaluateMultipleStream = async (
     body: formData,
   });
 
-  const reader = res.body?.getReader();
+  if (!res.body) {
+    onError("No response from server");
+    return;
+  }
+
+  const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
 
+  let buffer = "";
+
   while (true) {
-    const { done, value } = await reader!.read();
+    const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value);
-    const lines = chunk.split("\n").filter(Boolean);
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
 
     for (let line of lines) {
-      const data = JSON.parse(line);
+      if (!line.trim()) continue;
 
-      if (data.type === "step") {
-        onStep(data.student, data.message, data.progress);
-      }
+      try {
+        const data = JSON.parse(line);
+        console.log("MULTI STREAM:", data);
 
-      if (data.type === "done_student") {
-        onStudentDone(data.student, data.result);
-      }
+        if (data.type === "step") {
+          onStep(data.student, data.message, data.progress);
+        }
 
-      if (data.type === "final") {
-        onFinal(data.results);
-      }
+        if (data.type === "done_student") {
+          onStudentDone(data.student, data.result);
+        }
 
-      if (data.type === "error") {
-        onError(data.message);
+        if (data.type === "final") {
+          onFinal(data.results);
+        }
+
+        if (data.type === "error") {
+          onError(data.message);
+        }
+      } catch (err) {
+        console.error("Parse error:", err);
       }
     }
   }
 };
+
+
 export const evaluateSingle = async (
   studentFile: File,
   answerKeyFile: File,
@@ -70,7 +88,7 @@ export const evaluateSingle = async (
   const decoder = new TextDecoder();
 
   let buffer = "";
-  let finalResult = null;
+  let finalResult: any = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -84,23 +102,32 @@ export const evaluateSingle = async (
     for (const line of lines) {
       if (!line.trim()) continue;
 
-      const data = JSON.parse(line);
+      try {
+        const data = JSON.parse(line);
+        console.log("SINGLE STREAM:", data); // 🔥 DEBUG
 
-      // 🔥 STEP
-      if (data.type === "step") {
-        onStep(data.message, data.progress);
-      }
+        // 🔹 STEP
+        if (data.type === "step") {
+          onStep(data.message, data.progress);
+        }
 
-      // 🔥 FINAL RESULT (no type)
-      else if (data.summary) {
-        finalResult = data;
-      }
+        // 🔥 FIX: HANDLE RESULT CORRECTLY
+        else if (data.type === "result") {
+          finalResult = data.data;
+        }
 
-      // 🔥 ERROR
-      else if (data.type === "error") {
-        throw new Error(data.message);
+        // 🔹 ERROR
+        else if (data.type === "error") {
+          throw new Error(data.message);
+        }
+      } catch (err) {
+        console.error("Parse error:", err);
       }
     }
+  }
+
+  if (!finalResult) {
+    throw new Error("No result received from server");
   }
 
   return finalResult;

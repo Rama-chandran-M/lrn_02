@@ -1,8 +1,10 @@
-from fastapi import FastAPI, UploadFile, File
+import threading
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
 import tempfile
 import shutil
+import json
 
 from agents.pipeline_agent import (
     run_full_pipeline,
@@ -21,6 +23,29 @@ app.add_middleware(
 )
 
 
+# =========================
+# 🔹 VALIDATION
+# =========================
+def validate_pdf(file: UploadFile):
+    if not file:
+        raise HTTPException(status_code=400, detail="File not provided")
+
+    if file.filename == "":
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid PDF format. Please upload a valid file."
+        )
+    file.file.seek(0, 2)  # move to end
+    size = file.file.tell()
+    file.file.seek(0)
+
+    if size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+
 @app.get("/")
 def home():
     return {"message": "API is running"}
@@ -30,111 +55,137 @@ def home():
 # 🔹 SINGLE STUDENT (STREAMING)
 # =========================
 from fastapi.responses import StreamingResponse
-import json
 
 @app.post("/evaluate")
 async def evaluate(
     student_file: UploadFile = File(...),
     answer_key_file: UploadFile = File(...)
 ):
+    validate_pdf(student_file)
+    validate_pdf(answer_key_file)
+
     async def event_stream():
         try:
             from queue import Queue
-            import threading
 
             step_queue = Queue()
             result_holder = {"result": None, "error": None}
 
             def update_step(msg, prog):
-                step_queue.put({"type": "step", "message": msg, "progress": prog})
+                step_queue.put({
+                    "type": "step",
+                    "message": msg,
+                    "progress": prog
+                })
 
             def task():
-                with tempfile.NamedTemporaryFile(delete=False) as s_temp:
-                    shutil.copyfileobj(student_file.file, s_temp)
-                    s_path = s_temp.name
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False) as s_temp:
+                        shutil.copyfileobj(student_file.file, s_temp)
+                        s_path = s_temp.name
 
-                with tempfile.NamedTemporaryFile(delete=False) as k_temp:
-                    shutil.copyfileobj(answer_key_file.file, k_temp)
-                    k_path = k_temp.name
+                    with tempfile.NamedTemporaryFile(delete=False) as k_temp:
+                        shutil.copyfileobj(answer_key_file.file, k_temp)
+                        k_path = k_temp.name
 
-                with open(s_path, "rb") as sf, open(k_path, "rb") as kf:
-                    res, err = run_full_pipeline(sf, kf, update_step)
+                    with open(s_path, "rb") as sf, open(k_path, "rb") as kf:
+                        res, err = run_full_pipeline(sf, kf, update_step)
 
-                # 🔥 FIX: parse LLM output if needed
-                if isinstance(res, list) and len(res) > 0:
-                    try:
-                        res = json.loads(res[0]["text"])
-                    except Exception as e:
-                        print("JSON parse error:", e)
+                    result_holder["result"] = res
+                    result_holder["error"] = err
 
-                result_holder["result"] = res
-                result_holder["error"] = err
-                step_queue.put("DONE")
+                except Exception as e:
+                    result_holder["error"] = str(e)
+
+                finally:
+                    step_queue.put("DONE")
 
             threading.Thread(target=task).start()
 
+            # 🔹 STREAM STEPS
             while True:
                 item = step_queue.get()
                 if item == "DONE":
                     break
 
-                print(json.dumps(item, indent=2))  # DEBUG
                 yield json.dumps(item) + "\n"
 
+            # 🔥 FINAL RESPONSE HANDLING
             if result_holder["error"]:
-                error_data = {"type": "error", "message": result_holder["error"]}
-                print(json.dumps(error_data, indent=2))
-                yield json.dumps(error_data) + "\n"
-            else:
-                # 🔥 FIX: send clean result (no wrapper)
-                print(json.dumps(result_holder["result"], indent=2))
-                yield json.dumps(result_holder["result"]) + "\n"
+                msg = result_holder["error"]
+                msg_upper = msg.upper()
 
-        except Exception as e:
-            error_data = {"type": "error", "message": str(e)}
-            print(json.dumps(error_data, indent=2))
-            yield json.dumps(error_data) + "\n"
+                if "OCR_ERROR" in msg_upper:
+                    msg = "OCR failed to process the document"
+
+                elif "PARSE_ERROR" in msg_upper or "PARSE" in msg_upper:
+                    msg = "Error processing evaluation result"
+
+                elif "API_ERROR" in msg_upper:
+                    msg = "Evaluation service temporarily unavailable"
+
+                elif "TIMEOUT" in msg_upper:
+                    msg = "Request timed out. Please try again."
+
+                else:
+                    msg = "Something went wrong during evaluation"
+
+                yield json.dumps({"type": "error", "message": msg}) + "\n"
+
+            else:
+                # 🔥 PRINT RESULT
+                print("\n===== FINAL RESULT SENT TO FRONTEND =====")
+                print(json.dumps(result_holder["result"], indent=2))
+                print("=========================================\n")
+
+                # 🔥 SEND RESULT TO FRONTEND (CRITICAL FIX)
+                yield json.dumps({
+                    "type": "result",
+                    "data": result_holder["result"]
+                }) + "\n"
+
+        except Exception:
+            yield json.dumps({
+                "type": "error",
+                "message": "Unexpected server error"
+            }) + "\n"
 
     return StreamingResponse(event_stream(), media_type="text/plain")
-
-
 # =========================
-# 🔥 MULTIPLE STUDENTS (OPTIMIZED)
+# 🔹 MULTIPLE STUDENTS
 # =========================
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-import json
 
 @app.post("/evaluate-multiple")
 async def evaluate_multiple(
     student_files: list[UploadFile] = File(...),
     answer_key_file: UploadFile = File(...)
 ):
+    validate_pdf(answer_key_file)
+    for student in student_files:
+        validate_pdf(student)
+
     async def event_stream():
         try:
             step_queue = Queue()
             results = []
 
-            # =========================
             # Save answer key
-            # =========================
             with tempfile.NamedTemporaryFile(delete=False) as key_temp:
                 shutil.copyfileobj(answer_key_file.file, key_temp)
                 key_path = key_temp.name
 
-            # =========================
-            # Prepare key ONCE
-            # =========================
             with open(key_path, "rb") as kf:
                 key_json, err = prepare_answer_key(kf)
 
             if err:
-                yield json.dumps({"type": "error", "message": err}) + "\n"
+                yield json.dumps({
+                    "type": "error",
+                    "message": "Failed to process answer key"
+                }) + "\n"
                 return
 
-            # =========================
-            # Worker function
-            # =========================
             def process_single_student(student):
                 try:
                     student_name = student.filename
@@ -154,12 +205,11 @@ async def evaluate_multiple(
                     with open(s_path, "rb") as sf:
                         result, err = process_student(sf, key_json, update_step)
 
-                        # 🔥 FIX: parse LLM output
                         if isinstance(result, list) and len(result) > 0:
                             try:
                                 result = json.loads(result[0]["text"])
-                            except Exception as e:
-                                print("JSON parse error:", e)
+                            except Exception:
+                                err = "parse_error"
 
                     step_queue.put({
                         "type": "done_student",
@@ -168,16 +218,13 @@ async def evaluate_multiple(
                         "error": err
                     })
 
-                except Exception as e:
+                except Exception:
                     step_queue.put({
                         "type": "done_student",
                         "student": student.filename,
-                        "error": str(e)
+                        "error": "Processing failed"
                     })
 
-            # =========================
-            # Run in parallel
-            # =========================
             executor = ThreadPoolExecutor(max_workers=3)
 
             for student in student_files:
@@ -186,9 +233,6 @@ async def evaluate_multiple(
             completed = 0
             total = len(student_files)
 
-            # =========================
-            # STREAM LOOP
-            # =========================
             while completed < total:
                 item = step_queue.get()
 
@@ -196,23 +240,17 @@ async def evaluate_multiple(
                     completed += 1
                     results.append(item)
 
-                print(json.dumps(item, indent=2))  # DEBUG
                 yield json.dumps(item) + "\n"
-
-            # =========================
-            # FINAL OUTPUT
-            # =========================
-            final_data = {
+            
+            yield json.dumps({
                 "type": "final",
                 "results": results
-            }
+            }) + "\n"
 
-            print(json.dumps(final_data, indent=2))  # ✅ FIXED
-            yield json.dumps(final_data) + "\n"
-
-        except Exception as e:
-            error_data = {"type": "error", "message": str(e)}
-            print(json.dumps(error_data, indent=2))
-            yield json.dumps(error_data) + "\n"
+        except Exception:
+            yield json.dumps({
+                "type": "error",
+                "message": "Unexpected server error"
+            }) + "\n"
 
     return StreamingResponse(event_stream(), media_type="text/plain")

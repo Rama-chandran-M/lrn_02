@@ -18,7 +18,11 @@ const Results = ({ result, onReset }: Props) => {
   }
 
   const summary = result?.summary;
-  const evaluation = result?.evaluation || [];
+
+  // 🔥 FIX 1: SAFE evaluation array
+  const evaluation = Array.isArray(result?.evaluation)
+    ? result.evaluation
+    : [];
 
   if (!summary) {
     return <div style={{ padding: 20 }}>Preparing final report...</div>;
@@ -94,12 +98,23 @@ const Results = ({ result, onReset }: Props) => {
           {evaluation.map((q, i) => {
             let mappedStatus = "not_attempted";
 
-            if (q.status === "missing") mappedStatus = "not_attempted";
-            else if (q.status === "attempted") {
-              if (!q.student_answer) mappedStatus = "not_attempted";
-              else if (q.score === q.marks) mappedStatus = "correct";
-              else if (q.score > 0) mappedStatus = "partial";
-              else mappedStatus = "incorrect";
+            if (q.status === "missing") {
+              mappedStatus = "not_attempted";
+            } else if (q.status === "attempted") {
+              // 🔥 FIX 2: safer answer check
+              if (!q.student_answer?.trim()) {
+                mappedStatus = "not_attempted";
+              }
+              // 🔥 FIX 3: float-safe comparison
+              else if ((q.score ?? 0) >= (q.marks ?? 0)) {
+                mappedStatus = "correct";
+              }
+              else if ((q.score ?? 0) > 0) {
+                mappedStatus = "partial";
+              }
+              else {
+                mappedStatus = "incorrect";
+              }
             }
 
             const cfg = statusConfig[mappedStatus];
@@ -130,7 +145,10 @@ const Results = ({ result, onReset }: Props) => {
                 <div style={styles.qBlock}>
                   <span style={styles.label}>Your Answer</span>
                   <p style={styles.answerText}>
-                    {q.student_answer || "Not answered"}
+                    {/* 🔥 FIX 4: empty string handling */}
+                    {q.student_answer?.trim()
+                      ? q.student_answer
+                      : "Not answered"}
                   </p>
                 </div>
 
