@@ -1,44 +1,80 @@
 import { useState } from "react";
 import UploadForm from "./components/UploadForm";
 import Results from "./components/Results";
-import { evaluateAPIStream } from "./services/api";
+import { evaluateMultipleStream, evaluateSingle } from "./services/api";
 import type { Result } from "./types/types";
 
 function App() {
-  const [result, setResult] = useState<Result | null>(null);
+  const [results, setResults] = useState<
+    { student: string; result: Result }[]
+  >([]);
+  const [progressMap, setProgressMap] = useState<
+    Record<string, string[]>
+  >({});
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 🔥 NEW
-  const [steps, setSteps] = useState<string[]>([]);
-  const [progress, setProgress] = useState(0);
-
-  const handleSubmit = async (student: File, key: File) => {
+  const handleSubmit = async (students: File[], key: File) => {
     try {
       setLoading(true);
-      setSteps([]);
-      setProgress(0);
-      setResult(null);
+      setResults([]);
+      setProgressMap({});
+      setExpanded(null);
 
-      await evaluateAPIStream(
-        student,
+      // ✅ SINGLE (FIXED → STREAM SUPPORT)
+      if (students.length === 1) {
+        const studentName = students[0].name;
+
+        const res = await evaluateSingle(
+          students[0],
+          key,
+          (step, progress) => {
+            setProgressMap((prev) => ({
+              ...prev,
+              [studentName]: [
+                ...(prev[studentName] || []),
+                step,
+              ],
+            }));
+          }
+        );
+
+        setResults([
+          {
+            student: studentName,
+            result: res,
+          },
+        ]);
+
+        setLoading(false);
+        return;
+      }
+
+      // ✅ MULTIPLE (UNCHANGED)
+      await evaluateMultipleStream(
+        students,
         key,
-        (step, prog) => {
-          setSteps((prev) => [...prev, step]);
-          setProgress(prog);
+        (student, step) => {
+          setProgressMap((prev) => ({
+            ...prev,
+            [student]: [...(prev[student] || []), step],
+          }));
         },
-        (data) => {
-          setResult(data);
+        (student, result) => {
+          setResults((prev) => [...prev, { student, result }]);
+        },
+        () => {
           setLoading(false);
         },
         (err) => {
           console.error(err);
-          alert("Something went wrong. Please try again.");
+          alert("Something went wrong");
           setLoading(false);
         }
       );
     } catch (err) {
       console.error(err);
-      alert("Something went wrong.");
+      alert("Something went wrong");
       setLoading(false);
     }
   };
@@ -56,49 +92,82 @@ function App() {
       </header>
 
       <main style={styles.main}>
-        {!result ? (
+        {!results.length ? (
           <div style={styles.uploadSection}>
             <div style={styles.hero}>
               <h1 style={styles.h1}>Answer Sheet Evaluator</h1>
               <p style={styles.subtitle}>
-                Upload a student answer sheet and answer key to get a clean,
-                structured evaluation report instantly.
+                Upload multiple student sheets and one answer key to get
+                structured evaluation reports.
               </p>
             </div>
 
             <UploadForm onSubmit={handleSubmit} loading={loading} />
 
-            {/* 🔥 PROGRESS UI */}
-            {loading && (
-              <div style={styles.progressCard}>
-                <div style={styles.progressHeader}>
-                  <span style={styles.progressTitle}>Processing</span>
-                  <span style={styles.progressPercent}>{progress}%</span>
-                </div>
-
-                {/* Progress bar */}
-                <div style={styles.progressBar}>
-                  <div
-                    style={{
-                      ...styles.progressFill,
-                      width: `${progress}%`,
-                    }}
-                  />
-                </div>
-
-                {/* Steps */}
-                <div style={styles.steps}>
-                  {steps.map((s, i) => (
-                    <div key={i} style={styles.step}>
-                      ✔ {s}
+            {/* 🔥 NOW WORKS FOR BOTH SINGLE + MULTIPLE */}
+            {loading && Object.keys(progressMap).length > 0 && (
+              <div style={styles.progressWrap}>
+                {Object.entries(progressMap).map(([student, steps]) => (
+                  <div key={student} style={styles.studentCard}>
+                    <div style={styles.studentHeader}>
+                      <span style={styles.studentName}>{student}</span>
                     </div>
-                  ))}
-                </div>
+
+                    <div style={styles.steps}>
+                      {steps.map((s, i) => (
+                        <div key={i} style={styles.step}>
+                          ✔ {s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         ) : (
-          <Results result={result} onReset={() => setResult(null)} />
+          <>
+            {/* ✅ GLOBAL RESET BUTTON */}
+            <div style={styles.resetWrap}>
+              <button
+                style={styles.resetBtn}
+                onClick={() => {
+                  setResults([]);
+                  setProgressMap({});
+                  setExpanded(null);
+                }}
+              >
+                ← New Evaluation
+              </button>
+            </div>
+
+            {results.length === 1 ? (
+              <Results result={results[0].result} onReset={() => {}} />
+            ) : (
+              <div style={styles.dropdownList}>
+                {results.map((r, i) => (
+                  <div key={i} style={styles.dropdownItem}>
+                    <div
+                      style={styles.dropdownHeader}
+                      onClick={() =>
+                        setExpanded(
+                          expanded === r.student ? null : r.student
+                        )
+                      }
+                    >
+                      {expanded === r.student ? "▼" : "▶"} {r.student}
+                    </div>
+
+                    {expanded === r.student && (
+                      <div style={styles.dropdownContent}>
+                        <Results result={r.result} onReset={() => {}} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
@@ -109,16 +178,13 @@ const styles: Record<string, React.CSSProperties> = {
   root: {
     minHeight: "100vh",
     backgroundColor: "#fafaf9",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "'Inter', sans-serif",
     color: "#111",
   },
 
   header: {
     borderBottom: "1px solid #ececea",
     backgroundColor: "#fff",
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
   },
 
   headerInner: {
@@ -133,15 +199,14 @@ const styles: Record<string, React.CSSProperties> = {
 
   logo: {
     display: "flex",
-    alignItems: "center",
     gap: 8,
   },
 
   logoMark: {
     width: 18,
     height: 18,
-    borderRadius: 5,
     backgroundColor: "#111",
+    borderRadius: 5,
   },
 
   logoText: {
@@ -151,90 +216,105 @@ const styles: Record<string, React.CSSProperties> = {
 
   badge: {
     fontSize: 11,
-    backgroundColor: "#f3f3f1",
-    color: "#666",
-    borderRadius: 5,
+    background: "#f3f3f1",
     padding: "3px 8px",
   },
 
   main: {
     maxWidth: 960,
     margin: "0 auto",
-    padding: "56px 24px 80px",
+    padding: "40px 20px",
   },
 
   uploadSection: {
-    maxWidth: 560,
+    maxWidth: 600,
     margin: "0 auto",
   },
 
   hero: {
-    marginBottom: 40,
+    marginBottom: 30,
   },
 
   h1: {
     fontSize: 28,
     fontWeight: 600,
-    marginBottom: 8,
   },
 
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: "#666",
-    lineHeight: 1.6,
   },
 
-  /* 🔥 NEW PROGRESS UI */
-
-  progressCard: {
-    marginTop: 24,
-    border: "1px solid #eee",
-    borderRadius: 12,
-    padding: 16,
-    background: "#fff",
+  progressWrap: {
+    marginTop: 20,
     display: "flex",
     flexDirection: "column",
-    gap: 12,
+    gap: 10,
   },
 
-  progressHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
+  studentCard: {
+    border: "1px solid #eee",
+    padding: 12,
+    borderRadius: 10,
+    background: "#fff",
   },
 
-  progressTitle: {
-    fontSize: 14,
+  studentHeader: {
     fontWeight: 500,
+    marginBottom: 6,
   },
 
-  progressPercent: {
-    fontSize: 13,
-    color: "#666",
-  },
-
-  progressBar: {
-    height: 6,
-    background: "#f1f1f1",
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-
-  progressFill: {
-    height: "100%",
-    background: "#111",
-    transition: "width 0.3s ease",
+  studentName: {
+    fontSize: 14,
   },
 
   steps: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 4,
   },
 
   step: {
     fontSize: 13,
     color: "#444",
+  },
+
+  dropdownList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+
+  dropdownItem: {
+    border: "1px solid #eee",
+    borderRadius: 10,
+    overflow: "hidden",
+    background: "#fff",
+  },
+
+  dropdownHeader: {
+    padding: 12,
+    cursor: "pointer",
+    fontWeight: 500,
+    background: "#fafafa",
+  },
+
+  dropdownContent: {
+    padding: 12,
+  },
+
+  resetWrap: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: 20,
+  },
+
+  resetBtn: {
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    padding: "8px 14px",
+    background: "#fff",
+    cursor: "pointer",
   },
 };
 
