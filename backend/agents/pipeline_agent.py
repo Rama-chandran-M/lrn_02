@@ -127,6 +127,7 @@ def run_full_pipeline(student_file, answer_key_file, update_step=None):
             update_step("✅ Finalizing results...", 100)
 
         final_json, parse_err = safe_json_parse(evaluation_result)
+        print(final_json)
 
         if parse_err:
             return None, f"Final JSON error:\n{parse_err}"
