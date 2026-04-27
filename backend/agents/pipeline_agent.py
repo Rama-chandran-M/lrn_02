@@ -157,7 +157,13 @@ def process_student(student_file, key_json, update_step=None):
         if err:
             return None, err
 
+        # 🔥 NEW: unwrap before parsing
+        if isinstance(evaluation_result, list) and len(evaluation_result) > 0:
+            if isinstance(evaluation_result[0], dict) and "text" in evaluation_result[0]:
+                evaluation_result = evaluation_result[0]["text"]
+
         final_json, parse_err = safe_json_parse(evaluation_result)
+
         if parse_err:
             return None, f"PARSE_ERROR: {parse_err}"
 
