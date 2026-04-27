@@ -24,7 +24,7 @@ app.add_middleware(
 
 
 # =========================
-# 🔹 VALIDATION
+#  VALIDATION
 # =========================
 def validate_pdf(file: UploadFile):
     if not file:
@@ -52,7 +52,7 @@ def home():
 
 
 # =========================
-# 🔹 SINGLE STUDENT (STREAMING)
+#  SINGLE STUDENT (STREAMING)
 # =========================
 from fastapi.responses import StreamingResponse
 
@@ -102,7 +102,7 @@ async def evaluate(
 
             threading.Thread(target=task).start()
 
-            # 🔹 STREAM STEPS
+            #  STREAM STEPS
             while True:
                 item = step_queue.get()
                 if item == "DONE":
@@ -110,7 +110,7 @@ async def evaluate(
 
                 yield json.dumps(item) + "\n"
 
-            # 🔥 FINAL RESPONSE HANDLING
+            #  FINAL RESPONSE HANDLING
             if result_holder["error"]:
                 msg = result_holder["error"]
                 msg_upper = msg.upper()
@@ -133,12 +133,12 @@ async def evaluate(
                 yield json.dumps({"type": "error", "message": msg}) + "\n"
 
             else:
-                # 🔥 PRINT RESULT
+                #  PRINT RESULT
                 print("\n===== FINAL RESULT SENT TO FRONTEND =====")
                 print(json.dumps(result_holder["result"], indent=2))
                 print("=========================================\n")
 
-                # 🔥 SEND RESULT TO FRONTEND (CRITICAL FIX)
+                #  SEND RESULT TO FRONTEND (CRITICAL FIX)
                 yield json.dumps({
                     "type": "result",
                     "data": result_holder["result"]

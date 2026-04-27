@@ -10,7 +10,7 @@ from prompts.answer_key_prompt import ANSWER_KEY_PROMPT
 from prompts.evaluation_prompt import EVALUATION_PROMPT
 
 # =========================
-# 🔧 CONFIG
+#  CONFIG
 # =========================
 TIMEOUT_SECONDS = 240
 
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 # =========================
-# ✅ SAFE JSON PARSER
+#  SAFE JSON PARSER
 # =========================
 def safe_json_parse(text):
     try:
@@ -38,7 +38,7 @@ def safe_json_parse(text):
         except:
             pass
 
-        # 🔥 Improved extraction
+        #  Improved extraction
         start = cleaned.find("{")
         end = cleaned.rfind("}")
 
@@ -62,7 +62,7 @@ def run_with_timeout(func, *args, timeout=TIMEOUT_SECONDS):
             future = executor.submit(func, *args)
             result = future.result(timeout=timeout)
 
-            # 🔥 CRITICAL FIX: unpack correctly
+            #  CRITICAL FIX: unpack correctly
             if isinstance(result, tuple) and len(result) == 2:
                 return result  # (output, error)
 
@@ -77,7 +77,7 @@ def run_with_timeout(func, *args, timeout=TIMEOUT_SECONDS):
 
 
 # =========================
-# 🔹 STEP 1: PREPARE ANSWER KEY
+#  STEP 1: PREPARE ANSWER KEY
 # =========================
 def prepare_answer_key(answer_key_file, update_step=None):
     try:
@@ -112,7 +112,7 @@ def prepare_answer_key(answer_key_file, update_step=None):
 
 
 # =========================
-# 🔹 STEP 2: PROCESS STUDENT
+#  STEP 2: PROCESS STUDENT
 # =========================
 def process_student(student_file, key_json, update_step=None):
     try:
@@ -157,7 +157,7 @@ def process_student(student_file, key_json, update_step=None):
         if err:
             return None, err
 
-        # 🔥 NEW: unwrap before parsing
+        #  NEW: unwrap before parsing
         if isinstance(evaluation_result, list) and len(evaluation_result) > 0:
             if isinstance(evaluation_result[0], dict) and "text" in evaluation_result[0]:
                 evaluation_result = evaluation_result[0]["text"]
@@ -178,7 +178,7 @@ def process_student(student_file, key_json, update_step=None):
 
 
 # =========================
-# 🔹 FULL PIPELINE
+#  FULL PIPELINE
 # =========================
 def run_full_pipeline(student_file, answer_key_file, update_step=None):
     try:
